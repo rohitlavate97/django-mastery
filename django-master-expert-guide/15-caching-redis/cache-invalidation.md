@@ -1,129 +1,157 @@
-# Cache Invalidation Strategies
+# Advanced Django Cache Invalidation: A Staff Engineer's Guide [DJANGO 6.1+]
 
-## 1. Mental Model
+## 1. Mental Model: Cache Invalidation Topology
+
+Phil Karlton famously said, "There are only two hard things in Computer Science: cache invalidation and naming things." 
+
 ```text
-[DB Update] ----> (Invalidation Trigger)
-                         |
-                         v
-                  [Delete Key / Increment Version]
-                         |
-                         v
-[Next Request] -> Cache Miss -> [Recompute] -> [Store New Value]
++---------------+       [Write/Update]        +------------------+
+|               | --------------------------> |                  |
+| Django Client |                             | PostgreSQL (DB)  |
+|               | <---- [Cache Miss/Read] --- |                  |
++---------------+                             +------------------+
+      |      ^
+      |      |
+ [Set/Delete]| [Cache Hit]
+      v      |
++------------------+
+| Redis Cache      |
+| (Key-Value)      |
++------------------+
 ```
 
-## 2. Why It Exists
-"There are only two hard things in Computer Science: cache invalidation and naming things." 
-Stale cache data leads to inconsistent user experiences (e.g., a user updates their profile, but the old name is still displayed). Invalidation ensures the cache remains synchronized with the source of truth (the database).
+### The Three Invalidation Strategies
+1. **Time-To-Live (TTL)**: Passive invalidation. (Weakest)
+2. **Event-Driven Invalidation**: Deleting keys via Django signals or ORM overrides. (Standard)
+3. **Key Versioning (Cache Tagging)**: Incrementing a version number attached to a resource. (Enterprise)
 
-## 3. Internal Working
-Invalidation typically works in one of two ways:
-1. **Explicit Deletion:** Deleting the cache key (`cache.delete(key)`).
-2. **Key Versioning:** Changing the key name or version parameter so subsequent requests look for a new key, letting the old one expire naturally via TTL.
+---
 
-## 4. Basic Implementation
-Using Django Signals to delete a cache key when a model is updated.
+## 2. Why It Exists (The Stale Data Problem)
+
+If an admin updates a Product's price from $10 to $20, but the cache TTL is 24 hours, users will continue checking out with the $10 price. You must evict or update the cached data exactly when the source of truth (the database) mutates.
+
+---
+
+## 3. Basic Implementation vs. Production Implementation
+
+### ❌ The Broken/Basic Way (Ticking Time Bomb)
 
 ```python
+# models.py
+from django.db import models
+from django.core.cache import cache
+
+class Product(models.Model):
+    name = models.CharField(max_length=100)
+    price = models.DecimalField(max_digits=10, decimal_places=2)
+
+# views.py
+def product_detail(request, product_id):
+    # 🚨 DANGER: Cache is set for 1 hour. If price changes, it's stale.
+    data = cache.get(f'product_{product_id}')
+    if not data:
+        data = Product.objects.get(id=product_id)
+        cache.set(f'product_{product_id}', data, 3600)
+    return JsonResponse({'price': data.price})
+```
+
+### ✅ The Production-Hardened Way (Event-Driven & Versioning)
+
+```python
+# models.py
+from django.db import models
+from django.core.cache import cache
 from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver
-from django.core.cache import cache
-from .models import UserProfile
 
-@receiver(post_save, sender=UserProfile)
-@receiver(post_delete, sender=UserProfile)
-def invalidate_user_profile_cache(sender, instance, **kwargs):
-    cache_key = f"user_profile_{instance.user_id}"
-    cache.delete(cache_key)
-```
-
-## 5. Production-Ready Implementation
-Key versioning is often safer than deletion in high-concurrency environments to avoid race conditions.
-
-```python
-from django.core.cache import cache
-
-def get_profile_version_key(user_id):
-    return f"profile_version_{user_id}"
-
-def get_user_profile_cache(user_id):
-    # Fetch the current version, default to 1
-    version = cache.get(get_profile_version_key(user_id), 1)
+class Product(models.Model):
+    name = models.CharField(max_length=100)
+    price = models.DecimalField(max_digits=10, decimal_places=2)
     
-    cache_key = f"user_profile_{user_id}"
-    
-    # Use Django's built-in versioning
-    profile_data = cache.get(cache_key, version=version)
-    
-    if profile_data is None:
-        profile_data = fetch_profile_from_db(user_id)
-        cache.set(cache_key, profile_data, timeout=3600, version=version)
+    @property
+    def cache_key(self):
+        return f"product_{self.id}"
         
-    return profile_data
+    @property
+    def version_key(self):
+        return f"product_version_{self.id}"
 
-# Invalidation is just bumping the version
-def invalidate_profile(user_id):
-    version_key = get_profile_version_key(user_id)
+# 🔧 FIX: Signal-based Cache Invalidation
+@receiver([post_save, post_delete], sender=Product)
+def invalidate_product_cache(sender, instance, **kwargs):
+    # Option A: Delete the key (Simple)
+    cache.delete(instance.cache_key)
+    
+    # Option B: Key Versioning (Advanced)
+    # Increment the version. Next read will use the new version, 
+    # old version naturally expires via Redis LRU.
     try:
-        cache.incr(version_key)
+        cache.incr(instance.version_key)
     except ValueError:
-        # If the key doesn't exist, start at 2
-        cache.set(version_key, 2)
+        cache.set(instance.version_key, 1, timeout=None)
+
+# views.py
+def product_detail(request, product_id):
+    version_key = f"product_version_{product_id}"
+    version = cache.get(version_key, 1)
+    
+    cache_key = f"product_{product_id}_v{version}"
+    
+    data = cache.get(cache_key)
+    if not data:
+        data = Product.objects.get(id=product_id)
+        # Store with the specific version
+        cache.set(cache_key, data, 3600)
+        
+    return JsonResponse({'price': data.price})
 ```
 
-## 6. Anti-Patterns
-🔴 **Ticking Time Bomb:**
+---
+
+## 4. Production Incident: The Signal Blackhole
+
+### 🔴 INCIDENT: Bulk Update Ignored Cache Invalidation
+**Severity:** SEV-2
+**Symptoms:** After running a script to apply a 10% discount to all products, the website continued showing old prices.
+**Investigation:** 
+- `cache.get()` was returning stale data.
+- The invalidation signals (`post_save`) did not fire.
+**Root Cause:**
+A developer ran `Product.objects.update(price=F('price') * 0.9)` in a celery task. Django's `.update()` acts directly on the SQL level and **bypasses all Django signals**. The `post_save` signal was never triggered.
+**🔧 FIX & Prevention:**
+Overrode the custom queryset/manager to clear caches, or explicitly cleared them in the task.
 ```python
-# Relying purely on signals for complex invalidation
-@receiver(post_save, sender=Post)
-def clear_homepage_cache(sender, instance, **kwargs):
-    cache.delete("homepage_feed")
+# tasks.py
+def apply_discount():
+    # .update() bypasses signals!
+    Product.objects.update(price=F('price') * 0.9)
+    
+    # 🔧 FIX: Must manually invalidate or use a bulk invalidation strategy
+    cache.delete_pattern("product_*") # If using Redis natively
 ```
-*Why it's bad:* In a bulk update (`Post.objects.update(...)`), signals are NOT triggered. The cache will remain stale. Signals are also synchronous; deleting cache during a transaction can cause race conditions if the transaction rolls back.
 
-## 7. Environment-Specific Behavior
-| Strategy | Local | Production |
-|----------|-------|------------|
-| Signal Deletion | Fine | Prone to race conditions during DB transactions |
-| Key Versioning | Unnecessary | Highly recommended for distributed setups |
+---
 
-## 8. Local Development Issues
-🔴 SYMPTOM: Updated data isn't showing up on the frontend.
-🔍 CAUSE: Cache invalidation logic missed a specific update path (e.g., a background Celery task updated the DB without triggering invalidation).
-🔧 FIX: Centralize update logic (e.g., Services layer) and ensure cache invalidation happens there, rather than relying exclusively on model signals.
-
-## 9. Production Issues
-🔴 INCIDENT: Race Condition during Transaction
-- **Severity:** MEDIUM
-- **Investigation:** Cache was sometimes showing stale data immediately after a save.
-- **Root Cause:** A signal deleted the cache key, another request immediately reconstructed the cache using *stale* DB data because the original transaction hadn't committed yet.
-- **Fix:** Use `transaction.on_commit()` to defer cache deletion until the database changes are visible to all connections.
+## 5. Pytest Test Suite
 
 ```python
-from django.db import transaction
+import pytest
+from django.core.cache import cache
+from myapp.models import Product
 
-@receiver(post_save, sender=UserProfile)
-def invalidate_safely(sender, instance, **kwargs):
-    transaction.on_commit(lambda: cache.delete(f"profile_{instance.id}"))
+@pytest.mark.django_db
+class TestCacheInvalidation:
+    
+    def test_product_save_invalidates_cache(self):
+        # Arrange
+        product = Product.objects.create(name="Laptop", price=1000)
+        cache.set(product.cache_key, "stale_data")
+        
+        # Act
+        product.price = 900
+        product.save() # Triggers post_save
+        
+        # Assert
+        assert cache.get(product.cache_key) is None
 ```
-
-## 10. Failure Simulation
-Update a model using `.update()` instead of `.save()`. Observe that signals don't fire and the cache isn't invalidated. This proves the limitation of signal-based invalidation.
-
-## 11. Decision Matrix
-| Invalidation | Pros | Cons |
-|--------------|------|------|
-| TTL (Time-to-live) | Zero logic required | Data is stale until TTL expires |
-| Signal Deletion | Easy to implement | Misses bulk operations, race conditions |
-| Versioning | Prevents race conditions, atomic | Requires tracking version state |
-
-## 12. Senior-Level Questions
-**Q: How do you invalidate cache for a list view (e.g., `/posts/`) when a single item is updated?**
-A: This is complex. Options: 
-1. Key versioning on the list based on the latest updated timestamp of the collection.
-2. Store individual items in cache and assemble the list view dynamically.
-3. Overwrite the specific item in the cached list (Write-through), though this is complex with pagination.
-
-## 13. Production Checklist
-- [ ] All cache invalidation within transactions uses `transaction.on_commit()`.
-- [ ] Bulk operations (`update()`, `bulk_create()`) have manual cache invalidation steps.
-- [ ] Cache keys use a consistent naming convention to avoid collisions.

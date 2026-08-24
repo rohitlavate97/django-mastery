@@ -1,80 +1,117 @@
-# Failure Handling in Celery
+# Failure Handling in Celery: A Staff Engineer's Guide [DJANGO 6.1+]
 
-## 1. Mental Model
+## 1. Mental Model: Celery Failure States
+
+Tasks fail. A robust system doesn't prevent failure; it routes and handles it gracefully.
+
 ```text
-Task Fails -> Retry (Backoff + Jitter) -> Exceeds Max Retries -> Dead Letter Queue (DLQ)
-Worker Crashes -> acks_late=True -> Message restored to Broker queue -> Picked up by another worker
+                      [Task Exception]
+                             |
+                             v
+                  +--------------------+
+                  |  Retry Policy?     |
+                  +--------------------+
+                   /                  \
+             [YES]                     [NO or Max Retries]
+               /                          \
++-------------------------+      +-------------------------+
+| Exponential Backoff     |      | Dead Letter Queue (DLQ) |
+| (countdown = 2^retries) |      | or Error Database Table |
++-------------------------+      +-------------------------+
+               \                          /
+                \--> [Message Broker] <--/
 ```
+
+---
 
 ## 2. Why It Exists
-Network calls fail, APIs rate-limit, databases deadlock, and servers crash. Robust failure handling ensures data isn't lost and transient errors don't cause permanent failures.
 
-## 3. Internal Working
-When a task fails, Celery catches the exception. If `self.retry` is called, Celery calculates the delay, creates a new task message with incremented retries, and sends it to the broker. If `acks_late=True`, the worker only acknowledges the message to the broker *after* successful completion.
+Network requests drop. APIs rate-limit you. Databases deadlock. If you don't handle Celery exceptions, messages are lost forever, or worse, they infinitely loop and crash your workers (Poison Pill).
 
-## 4. Basic Implementation
+---
+
+## 3. Basic Implementation vs. Production Implementation
+
+### ❌ The Broken/Basic Way
+
 ```python
-@shared_task(bind=True, max_retries=3)
-def fetch_data(self, url):
-    try:
-        response = requests.get(url)
-        response.raise_for_status()
-    except requests.exceptions.RequestException as exc:
-        raise self.retry(exc=exc, countdown=5)
+from celery import shared_task
+import requests
+
+@shared_task
+def send_webhook(url, payload):
+    # 🚨 DANGER 1: No timeout. 
+    # 🚨 DANGER 2: No retry on 502/503.
+    # 🚨 DANGER 3: Fails silently if an exception occurs.
+    requests.post(url, json=payload)
 ```
 
-## 5. Production-Ready Implementation
+### ✅ The Production-Hardened Way (Tenacity + Celery Retries)
+
 ```python
-import random
+from celery import shared_task
+from celery.exceptions import Reject
+import httpx
+import logging
+
+logger = logging.getLogger(__name__)
 
 @shared_task(
-    bind=True, 
-    max_retries=5, 
-    acks_late=True, 
-    reject_on_worker_lost=True,
-    autoretry_for=(ConnectionError, TimeoutError),
-    retry_backoff=True,
-    retry_backoff_max=600,
-    retry_jitter=True
+    bind=True,
+    max_retries=5,
+    autoretry_for=(httpx.RequestError,),
+    retry_backoff=True, # Uses exponential backoff
+    retry_jitter=True,  # Prevents thundering herds on retry
+    acks_late=True,     # Message stays in queue until SUCCESS
 )
-def robust_api_call(self, data):
-    # retry_backoff with jitter prevents thundering herd problem
-    api_client.submit(data)
+def send_webhook_safe(self, url, payload):
+    try:
+        # 🔧 FIX: Strict timeouts
+        with httpx.Client(timeout=5.0) as client:
+            response = client.post(url, json=payload)
+            
+            if response.status_code in [400, 401, 403, 404]:
+                # 🔧 FIX: Do NOT retry client errors. It's a waste of CPU.
+                logger.error(f"Client error {response.status_code} for {url}")
+                # Rejecting removes it from queue without retrying
+                raise Reject(f"Fatal client error: {response.status_code}")
+                
+            response.raise_for_status()
+            
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code in [429, 502, 503, 504]:
+            logger.warning("Upstream rate limited or down. Retrying...")
+            raise self.retry(exc=exc)
+        raise Reject("Unhandled status error")
 ```
 
-## 6. Anti-Patterns
-🔴 **Ticking Time Bomb:** `acks_late=False` (default) for critical tasks. If the worker is OOM killed mid-execution, the task is lost forever.
-🔴 **Ticking Time Bomb:** Retrying without backoff or jitter, causing a DDoS on the downstream service when it recovers.
+---
 
-## 7. Environment-Specific Behavior
-| Setting | RabbitMQ | Redis |
-|---------|----------|-------|
-| `acks_late` | Native support | Emulated via visibility timeout |
-| DLQ | Native (x-dead-letter-exchange) | Manual implementation required |
+## 4. Production Incident: The Poison Pill
 
-## 8. Local Development Issues
-🔴 SYMPTOM: Task runs multiple times.
-🔍 CAUSE: Visibility timeout in Redis is too short; Redis gives the unacknowledged task to another worker.
-🔧 FIX: Increase `broker_transport_options = {'visibility_timeout': 3600}`.
+### 🔴 INCIDENT: All Celery Workers Stopped Processing
+**Severity:** SEV-1
+**Symptoms:** Queue size spiked to 100,000. Workers were consuming 100% CPU but completing 0 tasks.
+**Investigation:** 
+- Straced a worker process. It was stuck in a tight loop parsing a massive 500MB JSON payload.
+- The task was configured with `acks_late=False` (default). 
+**Root Cause:**
+A malicious user uploaded a 500MB JSON file to an async processing endpoint. The worker pulled the task, crashed (OOM), and restarted. Because it crashed before completing, but *after* acknowledging (default behavior), the message was lost. Wait, no. We configured `acks_late=True` previously, so it went BACK to the queue. The next worker picked it up, crashed, returned to queue. Infinite death loop! (Poison Pill).
+**🔧 FIX & Prevention:**
+1. **Reject on Worker Lost**: Tell Celery not to retry if the worker dies mid-execution.
+2. **Task Size Limits**: Reject payloads > 1MB at the API gateway.
+```python
+# settings.py
+# If a worker is OOM killed, do not return the task to the queue.
+CELERY_TASK_REJECT_ON_WORKER_LOST = True
+```
 
-## 9. Production Issues
-🚨 INCIDENT: Infinite Retry Loop
-- **Investigation:** Task catches `Exception` and retries unconditionally, but `max_retries` was disabled or overridden incorrectly.
-- **Fix:** Only retry on expected, transient exceptions. Let persistent exceptions (e.g., 404 Not Found, 400 Bad Request) fail immediately.
+---
 
-## 10. Failure Simulation
-Hard kill a worker (`kill -9 <pid>`) while processing a long task with `acks_late=True`. Verify the task reappears in the queue and is processed by another worker.
+## 5. Environment Matrix
 
-## 11. Decision Matrix
-- **acks_late=True:** Data correctness is critical (payments). Task MUST be idempotent!
-- **acks_late=False:** Fire and forget (analytics pings).
-
-## 12. Senior-Level Questions
-**Q:** How do you implement a DLQ in Redis since it doesn't support it natively?
-**A:** Use Celery's `task_failure` signal to catch exceptions and push the failed task details (args, kwargs, traceback) into a separate Redis list or a Django model for manual review.
-
-## 13. Production Checklist
-- [ ] `acks_late` evaluated for all tasks.
-- [ ] Exponential backoff and jitter applied to retries.
-- [ ] DLQ mechanism in place for max-retries exceeded.
-- [ ] `visibility_timeout` configured correctly for Redis.
+| Feature | Dev | Prod |
+| :--- | :--- | :--- |
+| **Broker** | Redis (Drops messages on restart) | RabbitMQ (Persistent Disk) |
+| **Acks Late** | False (faster) | True (safer) |
+| **Error Tracking**| Console logs | Sentry Integration (`sentry_sdk.integrations.celery`) |
