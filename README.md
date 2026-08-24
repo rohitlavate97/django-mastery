@@ -70,6 +70,44 @@ Executable, containerized, test-backed reference codebases:
 
 ---
 
+## 🧪 Hands-on Practice Suite (`exercises/`)
+
+Interactive, test-driven coding challenges with automated Pytest grading:
+
+- **[01 Descriptors](exercises/01_descriptors/)**: Implement custom model field encryption descriptors (`__get__`, `__set__`).
+- **[02 ORM Optimization](exercises/02_orm_optimization/)**: Eliminate 50+ N+1 queries with strict `django_assert_num_queries(2)` limits.
+- **[03 Concurrency & Race Conditions](exercises/03_concurrency_race/)**: Fix multi-threaded balance deduction race conditions using `select_for_update()`.
+- **[04 Redis Rate Limiter](exercises/04_redis_rate_limiter/)**: Write atomic sliding window rate limiter Lua scripts in Redis.
+- **[05 Circuit Breaker](exercises/05_circuit_breaker/)**: Build a stateful Circuit Breaker (`CLOSED`, `OPEN`, `HALF_OPEN`) with fallback routing.
+
+```bash
+# Run all exercises
+pytest exercises/
+
+# Run a specific exercise
+pytest exercises/01_descriptors/
+```
+
+---
+
+## 💻 Interactive CLI Companion (`cli/`)
+
+```bash
+# Search the entire 38-section knowledge base offline
+python3 cli/main.py search "select_for_update"
+
+# View any production readiness checklist instantly
+python3 cli/main.py checklist pre-deployment
+
+# Run automated tests for an exercise
+python3 cli/main.py exercise 1
+
+# Take the interactive Staff-level self-assessment quiz
+python3 cli/main.py assess
+```
+
+---
+
 ## ⚡ The 30-Point Framework
 
 Every concept and architectural design follows the **30-Point Framework**:
