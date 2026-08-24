@@ -5,6 +5,8 @@ Django Mastery CLI - An Interactive Engineering Companion
 
 import sys
 import os
+import json
+import random
 import subprocess
 import argparse
 from pathlib import Path
@@ -12,6 +14,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 DOCS_DIR = BASE_DIR / "django-master-expert-guide"
 EXERCISES_DIR = BASE_DIR / "exercises"
+FLASHCARDS_FILE = BASE_DIR / "flashcards" / "django_mastery_deck.json"
 
 ANSI_GREEN = "\033[92m"
 ANSI_RED = "\033[91m"
@@ -42,7 +45,6 @@ def cmd_search(args):
             content = md_file.read_text(encoding="utf-8")
             if query in content.lower():
                 rel_path = md_file.relative_to(BASE_DIR)
-                # Count occurrences
                 count = content.lower().count(query)
                 matches.append((rel_path, count))
         except Exception:
@@ -65,7 +67,6 @@ def cmd_checklist(args):
     checklist_path = DOCS_DIR / "checklists" / f"{checklist_type}.md"
 
     if not checklist_path.exists():
-        # Try finding fuzzy match
         avail = [f.stem for f in (DOCS_DIR / "checklists").glob("*.md")]
         print(f"{ANSI_RED}Checklist '{checklist_type}' not found.{ANSI_RESET}")
         print(f"Available checklists: {', '.join(avail)}")
@@ -87,6 +88,94 @@ def cmd_exercise(args):
     target_dir = matching_dirs[0]
     print(f"{ANSI_CYAN}Running tests for {target_dir.name}...{ANSI_RESET}\n")
     subprocess.run(["pytest", str(target_dir), "-v"])
+
+
+def cmd_flashcards(args):
+    """Interactive spaced repetition flashcards."""
+    print_banner()
+    if not FLASHCARDS_FILE.exists():
+        print(f"{ANSI_RED}Flashcards file not found at {FLASHCARDS_FILE}{ANSI_RESET}")
+        return
+
+    with open(FLASHCARDS_FILE, "r", encoding="utf-8") as f:
+        deck = json.load(f)
+
+    category = args.category.lower() if args.category else None
+    cards = [c for c in deck if not category or category in c.get("category", "").lower()]
+
+    if not cards:
+        print(f"{ANSI_RED}No flashcards found for category: {args.category}{ANSI_RESET}")
+        return
+
+    random.shuffle(cards)
+    print(f"{ANSI_GREEN}Starting flashcard review session ({len(cards)} cards)...{ANSI_RESET}")
+    print(f"Press Enter to reveal the answer, and rate your confidence (1=Hard, 2=Good, 3=Easy, q=Quit)\n")
+
+    for i, card in enumerate(cards, 1):
+        print(f"{ANSI_BOLD}[Card {i}/{len(cards)}] - Category: {card['category']}{ANSI_RESET}")
+        print(f"\n{ANSI_YELLOW}Q: {card['question']}{ANSI_RESET}\n")
+        cmd = input(f"{ANSI_CYAN}[Press Enter to see answer (or 'q' to exit)]{ANSI_RESET} ")
+        if cmd.strip().lower() == "q":
+            break
+
+        print(f"\n{ANSI_GREEN}A:\n{card['answer']}{ANSI_RESET}\n")
+        print("-" * 60)
+
+
+def cmd_incident(args):
+    """Interactive production outage triage simulation."""
+    print_banner()
+    print(f"{ANSI_RED}{ANSI_BOLD}🚨 [INCIDENT SIMULATION - 02:15 AM]{ANSI_RESET}")
+    print(f"{ANSI_YELLOW}Alert: Datadog reporting API error rate jumped to 14.8%. Status: P1 SEV.{ANSI_RESET}")
+    print(f"Symptoms: Nginx returning 502 Bad Gateway intermittently. PostgreSQL CPU is at 98%.\n")
+
+    steps = [
+        ("Step 1: What is your immediate first triage action?",
+         [
+             "A) Restart the PostgreSQL database server immediately",
+             "B) Check `pg_stat_activity` for active queries and lock contention",
+             "C) Scale Gunicorn workers from 4 to 32 on all web instances",
+             "D) Flush the entire Redis cache cluster"
+         ],
+         "B",
+         "Checking `pg_stat_activity` allows you to see active queries causing 98% CPU before restarting or worsening connection exhaustion."),
+        ("Step 2: `pg_stat_activity` shows 80 connections waiting on `SELECT ... FOR UPDATE` on table `inventory_item`. What is the root cause?",
+         [
+             "A) Deadlock / high-contention row lock held by long-running transactions",
+             "B) Corrupted PostgreSQL WAL files",
+             "C) Nginx proxy buffer overflow",
+             "D) Missing index on `inventory_item.id`"
+         ],
+         "A",
+         "High-contention row locks from uncommitted long-running transactions cause waiting workers to exhaust the database connection pool."),
+        ("Step 3: What is the correct immediate mitigation to restore service without data loss?",
+         [
+             "A) Terminate the blocking PID with `pg_terminate_backend(pid)` and enable temporary rate limiting on the checkout endpoint",
+             "B) Drop table `inventory_item` and re-run migrations",
+             "C) Set `CONN_MAX_AGE = None` in Django settings",
+             "D) Turn off `transaction.atomic()` globally"
+         ],
+         "A",
+         "Terminating the blocking backend releases waiting workers immediately, while rate limiting prevents a recurring stampede.")
+    ]
+
+    score = 0
+    for q_title, options, correct, explanation in steps:
+        print(f"\n{ANSI_BOLD}{q_title}{ANSI_RESET}")
+        for opt in options:
+            print(f"  {opt}")
+        ans = input(f"\n{ANSI_CYAN}Choose action (A/B/C/D): {ANSI_RESET}").strip().upper()
+        if ans == correct:
+            print(f"{ANSI_GREEN}✅ Correct Decision!{ANSI_RESET} {explanation}")
+            score += 1
+        else:
+            print(f"{ANSI_RED}❌ Suboptimal Action.{ANSI_RESET} Correct: {correct}. {explanation}")
+
+    print(f"\n{ANSI_BOLD}Simulation Complete. Score: {score}/{len(steps)}{ANSI_RESET}")
+    if score == 3:
+        print(f"{ANSI_GREEN}🏅 Excellent on-call incident response leadership!{ANSI_RESET}")
+    else:
+        print(f"{ANSI_YELLOW}📖 Review `20-debugging/runbooks/502-errors.md` and `10-transactions-concurrency/deadlocks.md`.{ANSI_RESET}")
 
 
 def cmd_assess(args):
@@ -155,7 +244,14 @@ def main():
 
     # exercise command
     p_ex = subparsers.add_parser("exercise", help="Run automated test suite for an exercise")
-    p_ex.add_argument("number", type=int, help="Exercise number (e.g. 1, 2, 3)")
+    p_ex.add_argument("number", type=int, help="Exercise number (1 through 10)")
+
+    # flashcards command
+    p_fc = subparsers.add_parser("flashcards", help="Interactive active-recall spaced repetition review")
+    p_fc.add_argument("--category", help="Filter flashcards by category", default=None)
+
+    # incident command
+    subparsers.add_parser("incident", help="Interactive 2 AM production incident triage simulation")
 
     # assess command
     subparsers.add_parser("assess", help="Take an interactive self-assessment quiz")
@@ -173,6 +269,10 @@ def main():
         cmd_checklist(args)
     elif args.command == "exercise":
         cmd_exercise(args)
+    elif args.command == "flashcards":
+        cmd_flashcards(args)
+    elif args.command == "incident":
+        cmd_incident(args)
     elif args.command == "assess":
         cmd_assess(args)
 

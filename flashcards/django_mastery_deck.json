@@ -1,0 +1,114 @@
+[
+  {
+    "id": "INT-001",
+    "category": "Django Internals",
+    "question": "What are the exact steps executed during `django.setup()`?",
+    "answer": "1. `configure_logging(settings.LOGGING_CONFIG, settings.LOGGING)`\n2. `apps.populate(settings.INSTALLED_APPS)`:\n   - Instantiates `AppConfig` for each installed app\n   - Imports app models (`app_config.import_models()`)\n   - Calls `app_config.ready()` hooks where signals are registered.\n3. Sets `apps.ready = True`.",
+    "tags": ["internals", "startup", "app-registry"]
+  },
+  {
+    "id": "INT-002",
+    "category": "Django Internals",
+    "question": "How does Django implement Model fields under the hood?",
+    "answer": "Django model fields implement the Python Descriptor Protocol (`__get__`, `__set__`, `__set_name__`). Accessing `instance.field` calls `DeferredAttribute.__get__()` or `ForwardManyToOneDescriptor.__get__()`, which manages in-memory caching and lazy database lookups.",
+    "tags": ["internals", "descriptors", "models"]
+  },
+  {
+    "id": "INT-003",
+    "category": "Django Internals",
+    "question": "What is the difference between `ModelBase.__new__` and regular Python class creation?",
+    "answer": "`ModelBase` (Django's model metaclass) intercepts class creation, extracts Field instances from class attributes, registers them onto `_meta` (`Options` object), configures default managers, and registers the model in the global `Apps` registry.",
+    "tags": ["internals", "metaclasses", "models"]
+  },
+  {
+    "id": "INT-004",
+    "category": "Django Internals",
+    "question": "In what exact order does the Django middleware chain execute during request and response phases?",
+    "answer": "On Request: Inward from top to bottom (SecurityMiddleware -> SessionMiddleware -> CommonMiddleware -> CsrfViewMiddleware -> AuthenticationMiddleware -> MessageMiddleware).\nOn Response: Outward in REVERSE order from bottom to top.",
+    "tags": ["internals", "middleware", "lifecycle"]
+  },
+  {
+    "id": "ORM-001",
+    "category": "ORM & Database",
+    "question": "When does a QuerySet actually execute SQL against the database?",
+    "answer": "A QuerySet compiles and hits the database when evaluated by: iteration (`for item in qs`), slicing with step, `len(qs)`, `bool(qs)`, `list(qs)`, `repr(qs)`, `exists()`, `count()`, or `iterator()`.",
+    "tags": ["orm", "lazy-evaluation", "sql"]
+  },
+  {
+    "id": "ORM-002",
+    "category": "ORM & Database",
+    "question": "What is the architectural difference between `select_related()` and `prefetch_related()`?",
+    "answer": "`select_related()` uses an SQL `JOIN` in a single query (only for single-valued relationships: ForeignKey, OneToOne).\n`prefetch_related()` runs a separate query for each relation and performs in-memory Python joining (supports ManyToMany, reverse ForeignKeys).",
+    "tags": ["orm", "optimization", "performance"]
+  },
+  {
+    "id": "ORM-003",
+    "category": "ORM & Database",
+    "question": "What are the new fetch modes in Django 6.1 and why are they critical?",
+    "answer": "- `FETCH_RAISE`: Raises an exception if non-prefetched relation is accessed, preventing implicit N+1 queries in production.\n- `FETCH_PEERS`: Batches lazy queries across sibling model instances in memory.\n- `FETCH_ONE`: Standard legacy single-item lazy fetching.",
+    "tags": ["orm", "django-6.1", "performance"]
+  },
+  {
+    "id": "CONC-001",
+    "category": "Transactions & Concurrency",
+    "question": "What happens under the hood when `transaction.atomic()` blocks are nested?",
+    "answer": "The outermost `atomic()` block issues a `BEGIN` transaction. Inner nested `atomic()` blocks create database `SAVEPOINT s_<id>`. If an inner block fails, it rolls back to that savepoint without aborting the parent transaction.",
+    "tags": ["transactions", "concurrency", "acid"]
+  },
+  {
+    "id": "CONC-002",
+    "category": "Transactions & Concurrency",
+    "question": "Why should background tasks (e.g. Celery) NEVER be sent directly inside an atomic transaction?",
+    "answer": "Because the worker might process the task before the database transaction commits (or if the transaction rolls back, the task runs on non-existent data). Always use `transaction.on_commit(lambda: task.delay(id))`.",
+    "tags": ["transactions", "celery", "concurrency"]
+  },
+  {
+    "id": "CONC-003",
+    "category": "Transactions & Concurrency",
+    "question": "How do you prevent a race condition when two concurrent requests decrement inventory?",
+    "answer": "Either use an atomic database-level expression: `Product.objects.filter(id=pk, stock__gte=qty).update(stock=F('stock') - qty)`\nor acquire an exclusive row lock: `Product.objects.select_for_update().get(id=pk)` within `transaction.atomic()`.",
+    "tags": ["concurrency", "race-conditions", "locking"]
+  },
+  {
+    "id": "MIG-001",
+    "category": "Migrations",
+    "question": "What is the Expand/Contract (Parallel Run) pattern for zero-downtime migrations?",
+    "answer": "1. Expand: Add new column/table as nullable/backward-compatible.\n2. Migrate: Deploy code that writes to BOTH old and new, and backfill historical data in batches.\n3. Contract: Deploy code that reads only from new, then remove old column/table.",
+    "tags": ["migrations", "zero-downtime", "deployment"]
+  },
+  {
+    "id": "MIG-002",
+    "category": "Migrations",
+    "question": "Why is adding an index without `CONCURRENTLY` dangerous on a table with 50M rows?",
+    "answer": "Standard `CREATE INDEX` takes a `SHARE` lock on PostgreSQL, blocking all write operations (INSERT, UPDATE, DELETE) for the entire duration of the build. In Django, use `AddIndexConcurrently` with `atomic = False`.",
+    "tags": ["migrations", "postgresql", "locking"]
+  },
+  {
+    "id": "DRF-001",
+    "category": "Django REST Framework",
+    "question": "Why is CursorPagination required for tables with millions of rows over LimitOffsetPagination?",
+    "answer": "Offset pagination (`OFFSET 500000 LIMIT 20`) forces PostgreSQL to scan and discard 500,000 rows on every request (O(N) cost). CursorPagination uses index seek (`WHERE id > :cursor LIMIT 20`), which is O(log N) and constant execution time.",
+    "tags": ["drf", "pagination", "performance"]
+  },
+  {
+    "id": "SEC-001",
+    "category": "Security",
+    "question": "How does Django protect against CSRF attacks internally?",
+    "answer": "Django uses the Double-Submit Cookie pattern with HMAC masked tokens. A secret token is stored in the `csrftoken` cookie. The form/request header submits a masked version. The server unmasks the token using the secret key and verifies the match.",
+    "tags": ["security", "csrf", "owasp"]
+  },
+  {
+    "id": "CACHE-001",
+    "category": "Caching & Redis",
+    "question": "What is a Cache Stampede (Thundering Herd) and how do you prevent it in Django?",
+    "answer": "When a hot cache key expires, hundreds of concurrent requests experience a cache miss simultaneously and all hit PostgreSQL. Prevent by using distributed mutex locks (`cache.lock()`) during cache regeneration or probabilistic early expiration (XFetch).",
+    "tags": ["caching", "redis", "concurrency"]
+  },
+  {
+    "id": "OPS-001",
+    "category": "Operations & SRE",
+    "question": "What causes a 502 Bad Gateway error behind Nginx and Gunicorn in Django?",
+    "answer": "Nginx received an invalid or terminated response from the upstream Gunicorn worker. Common causes: Gunicorn worker timed out (`timeout=30s`), worker was killed by Linux OOM killer, or worker crashed due to unhandled segfault.",
+    "tags": ["debugging", "runbooks", "gunicorn"]
+  }
+]
