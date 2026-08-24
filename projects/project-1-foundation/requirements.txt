@@ -1,0 +1,13 @@
+Django>=5.0,<6.2
+djangorestframework
+psycopg[binary,pool]
+django-environ
+djangorestframework-simplejwt
+structlog
+python-json-logger
+django-cors-headers
+pytest
+pytest-django
+pytest-xdist
+factory-boy
+faker
