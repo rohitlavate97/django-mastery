@@ -122,45 +122,109 @@ def cmd_flashcards(args):
         print("-" * 60)
 
 
+INCIDENT_SCENARIOS = {
+    "1": {
+        "title": "High CPU & 502 Lock Contention Storm (P1 SEV)",
+        "context": "Datadog Alert at 02:15 AM: Intermittent 502 Bad Gateway errors across checkout endpoints. PostgreSQL CPU saturated at 98%.",
+        "steps": [
+            ("Step 1: First Triage Action",
+             ["A) Restart the PostgreSQL primary node",
+              "B) Inspect `pg_stat_activity` for active queries and lock contention",
+              "C) Scale Gunicorn workers from 4 to 32",
+              "D) Flush Redis cache cluster"],
+             "B",
+             "Checking `pg_stat_activity` identifies blocking queries before rash actions worsen connection exhaustion."),
+            ("Step 2: `pg_stat_activity` shows 80 queries waiting on `SELECT ... FOR UPDATE` on table `orders_inventory`. Root cause?",
+             ["A) High-contention row lock held by long-running payment transaction",
+              "B) Missing foreign key index",
+              "C) Nginx proxy buffer exhaustion",
+              "D) Corrupted WAL records"],
+             "A",
+             "Uncommitted row locks holding onto payment gateway HTTP calls cause catastrophic queueing of waiting DB transactions."),
+            ("Step 3: Immediate Mitigation",
+             ["A) Terminate blocking PID via `pg_terminate_backend()` and apply checkout rate limit",
+              "B) Drop table `orders_inventory`",
+              "C) Set `CONN_MAX_AGE = None`",
+              "D) Turn off `transaction.atomic()`"],
+             "A",
+             "Terminating the blocking PID immediately frees waiting workers, while rate limiting stabilizes ingress traffic.")
+        ]
+    },
+    "2": {
+        "title": "Celery Worker Memory Leak & Dead Letter Queue Avalanche (P2 SEV)",
+        "context": "CloudWatch Alert: Celery worker memory reached 94% on ECS nodes. Tasks are timing out, and RabbitMQ dead letter queue has 50,000 failed items.",
+        "steps": [
+            ("Step 1: First Triage Action",
+             ["A) Purge all RabbitMQ queues",
+              "B) Check worker process metrics and task logs for OOM terminations (Exit code 137)",
+              "C) Rewrite the task in Go immediately",
+              "D) Restart RabbitMQ broker"],
+             "B",
+             "Inspecting process exit codes reveals whether Linux OOM killer is terminating child workers mid-execution."),
+            ("Step 2: Workers are processing a PDF invoice generation task using unreleased C-extension buffers. Immediate Mitigation?",
+             ["A) Configure `CELERY_WORKER_MAX_TASKS_PER_CHILD = 50` and restart workers",
+              "B) Disable Celery retries globally",
+              "C) Increase worker thread concurrency to 64",
+              "D) Switch broker to SQLite"],
+             "A",
+             "`max_tasks_per_child` forces workers to recycle after processing N tasks, releasing fragmented C-level memory."),
+            ("Step 3: Preventing future task lost on crash?",
+             ["A) Set `task_acks_late = True` and `task_reject_on_worker_lost = True`",
+              "B) Use `task_acks_late = False`",
+              "C) Turn off CELERY_TASK_TRACK_STARTED",
+              "D) Set task timeout to 0"],
+             "A",
+             "`acks_late` and `reject_on_worker_lost` guarantee tasks are requeued and processed by healthy workers if a container crashes.")
+        ]
+    },
+    "3": {
+        "title": "Zero-Downtime Migration Failure & PostgreSQL Lock Timeout (P1 SEV)",
+        "context": "CI/CD pipeline deployed a migration adding an index to the 80M row `user_activity` table. Production web requests are timing out.",
+        "steps": [
+            ("Step 1: First Triage Action",
+             ["A) Cancel the migration transaction and inspect `pg_locks`",
+              "B) Drop the `user_activity` table",
+              "C) Restart Nginx",
+              "D) Disable PostgreSQL autovacuum"],
+             "A",
+             "Canceling the blocking DDL migration immediately clears the `SHARE` lock holding up incoming web writes."),
+            ("Step 2: Why did `python manage.py migrate` hang the production database?",
+             ["A) Standard `CREATE INDEX` takes a table-level SHARE lock blocking all INSERT/UPDATEs",
+              "B) Django was missing the database password",
+              "C) Migration files were corrupted",
+              "D) The table exceeded 2GB file limit"],
+             "A",
+             "Standard index creation blocks writes on large tables unless executed concurrently with lock timeouts."),
+            ("Step 3: Permanent Safe Fix",
+             ["A) Use `AddIndexConcurrently` in Django migration with `atomic = False` and `lock_timeout = '2s'`",
+              "B) Run migration during peak traffic",
+              "C) Remove indexes completely",
+              "D) Convert column to JSONField"],
+             "A",
+             "`AddIndexConcurrently` builds the index in background without taking write locks on active production tables.")
+        ]
+    }
+}
+
+
 def cmd_incident(args):
     """Interactive production outage triage simulation."""
     print_banner()
-    print(f"{ANSI_RED}{ANSI_BOLD}🚨 [INCIDENT SIMULATION - 02:15 AM]{ANSI_RESET}")
-    print(f"{ANSI_YELLOW}Alert: Datadog reporting API error rate jumped to 14.8%. Status: P1 SEV.{ANSI_RESET}")
-    print(f"Symptoms: Nginx returning 502 Bad Gateway intermittently. PostgreSQL CPU is at 98%.\n")
+    print(f"{ANSI_RED}{ANSI_BOLD}🚨 [INCIDENT SIMULATION COMMAND CENTER]{ANSI_RESET}\n")
 
-    steps = [
-        ("Step 1: What is your immediate first triage action?",
-         [
-             "A) Restart the PostgreSQL database server immediately",
-             "B) Check `pg_stat_activity` for active queries and lock contention",
-             "C) Scale Gunicorn workers from 4 to 32 on all web instances",
-             "D) Flush the entire Redis cache cluster"
-         ],
-         "B",
-         "Checking `pg_stat_activity` allows you to see active queries causing 98% CPU before restarting or worsening connection exhaustion."),
-        ("Step 2: `pg_stat_activity` shows 80 connections waiting on `SELECT ... FOR UPDATE` on table `inventory_item`. What is the root cause?",
-         [
-             "A) Deadlock / high-contention row lock held by long-running transactions",
-             "B) Corrupted PostgreSQL WAL files",
-             "C) Nginx proxy buffer overflow",
-             "D) Missing index on `inventory_item.id`"
-         ],
-         "A",
-         "High-contention row locks from uncommitted long-running transactions cause waiting workers to exhaust the database connection pool."),
-        ("Step 3: What is the correct immediate mitigation to restore service without data loss?",
-         [
-             "A) Terminate the blocking PID with `pg_terminate_backend(pid)` and enable temporary rate limiting on the checkout endpoint",
-             "B) Drop table `inventory_item` and re-run migrations",
-             "C) Set `CONN_MAX_AGE = None` in Django settings",
-             "D) Turn off `transaction.atomic()` globally"
-         ],
-         "A",
-         "Terminating the blocking backend releases waiting workers immediately, while rate limiting prevents a recurring stampede.")
-    ]
+    print("Select a Production Incident Scenario:")
+    print("  [1] High CPU & 502 Lock Contention Storm (P1 SEV)")
+    print("  [2] Celery Worker Memory Leak & Dead Letter Queue Avalanche (P2 SEV)")
+    print("  [3] Zero-Downtime Migration Failure & PostgreSQL Lock Timeout (P1 SEV)")
+
+    choice = input(f"\n{ANSI_CYAN}Enter scenario number (1-3) [default: 1]: {ANSI_RESET}").strip() or "1"
+    scenario = INCIDENT_SCENARIOS.get(choice, INCIDENT_SCENARIOS["1"])
+
+    print(f"\n{ANSI_RED}{ANSI_BOLD}=== {scenario['title']} ==={ANSI_RESET}")
+    print(f"{ANSI_YELLOW}{scenario['context']}{ANSI_RESET}\n")
 
     score = 0
-    for q_title, options, correct, explanation in steps:
+    for q_title, options, correct, explanation in scenario["steps"]:
         print(f"\n{ANSI_BOLD}{q_title}{ANSI_RESET}")
         for opt in options:
             print(f"  {opt}")
@@ -171,11 +235,12 @@ def cmd_incident(args):
         else:
             print(f"{ANSI_RED}❌ Suboptimal Action.{ANSI_RESET} Correct: {correct}. {explanation}")
 
-    print(f"\n{ANSI_BOLD}Simulation Complete. Score: {score}/{len(steps)}{ANSI_RESET}")
-    if score == 3:
-        print(f"{ANSI_GREEN}🏅 Excellent on-call incident response leadership!{ANSI_RESET}")
+    print(f"\n{ANSI_BOLD}--------------------------------------------------{ANSI_RESET}")
+    print(f"Simulation Complete. Score: {score}/{len(scenario['steps'])}")
+    if score == len(scenario['steps']):
+        print(f"{ANSI_GREEN}{ANSI_BOLD}🏅 Outstanding Incident Commander leadership! Service successfully restored.{ANSI_RESET}")
     else:
-        print(f"{ANSI_YELLOW}📖 Review `20-debugging/runbooks/502-errors.md` and `10-transactions-concurrency/deadlocks.md`.{ANSI_RESET}")
+        print(f"{ANSI_YELLOW}📖 Review the corresponding runbook in `20-debugging/runbooks/` for detailed mitigation procedures.{ANSI_RESET}")
 
 
 def cmd_assess(args):

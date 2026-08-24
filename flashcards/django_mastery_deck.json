@@ -28,6 +28,20 @@
     "tags": ["internals", "middleware", "lifecycle"]
   },
   {
+    "id": "INT-005",
+    "category": "Django Internals",
+    "question": "Why is `SimpleLazyObject` used for `request.user`?",
+    "answer": "`request.user` is wrapped in `SimpleLazyObject` so the database query to authenticate and fetch the user record is only executed when `request.user` is actually accessed by a view, permission, or serializer, avoiding overhead on anonymous or unauthenticated endpoints.",
+    "tags": ["internals", "lazy-objects", "auth"]
+  },
+  {
+    "id": "INT-006",
+    "category": "Django Internals",
+    "question": "How does Django's signal dispatcher avoid memory leaks?",
+    "answer": "Django signals default to storing weak references (`weak=True`) to receiver functions. If a receiver is an instance method and the instance is garbage collected, the signal automatically disconnects the receiver. If registering a local/lambda receiver, `weak=False` must be passed, but caller must manage lifecycle.",
+    "tags": ["internals", "signals", "memory"]
+  },
+  {
     "id": "ORM-001",
     "category": "ORM & Database",
     "question": "When does a QuerySet actually execute SQL against the database?",
@@ -47,6 +61,20 @@
     "question": "What are the new fetch modes in Django 6.1 and why are they critical?",
     "answer": "- `FETCH_RAISE`: Raises an exception if non-prefetched relation is accessed, preventing implicit N+1 queries in production.\n- `FETCH_PEERS`: Batches lazy queries across sibling model instances in memory.\n- `FETCH_ONE`: Standard legacy single-item lazy fetching.",
     "tags": ["orm", "django-6.1", "performance"]
+  },
+  {
+    "id": "ORM-004",
+    "category": "ORM & Database",
+    "question": "Why is `iterator(chunk_size=N)` preferred for batch processing over standard slicing?",
+    "answer": "Standard QuerySets populate `_result_cache`, keeping all instantiated model objects in memory. `iterator()` streams rows from the database cursor without populating the result cache, preventing Out-Of-Memory (OOM) crashes on large tables.",
+    "tags": ["orm", "memory", "batch-processing"]
+  },
+  {
+    "id": "ORM-005",
+    "category": "ORM & Database",
+    "question": "What is the hidden hazard of using `.only()` or `.defer()`?",
+    "answer": "If code later accesses a deferred field on any of the model instances (e.g. in a serializer or template), Django executes an individual SQL query per instance to fetch the missing column, creating a hidden N+1 query storm.",
+    "tags": ["orm", "n-plus-one", "pitfalls"]
   },
   {
     "id": "CONC-001",
@@ -70,6 +98,20 @@
     "tags": ["concurrency", "race-conditions", "locking"]
   },
   {
+    "id": "CONC-004",
+    "category": "Transactions & Concurrency",
+    "question": "What is the difference between `select_for_update(nowait=True)` and `select_for_update(skip_locked=True)`?",
+    "answer": "- `nowait=True`: Immediately raises `OperationalError` if the row is currently locked by another transaction (fail-fast).\n- `skip_locked=True`: Skips already-locked rows and returns only unlocked rows (ideal for building concurrent worker queues).",
+    "tags": ["concurrency", "locking", "postgresql"]
+  },
+  {
+    "id": "CONC-005",
+    "category": "Transactions & Concurrency",
+    "question": "How do PostgreSQL Advisory Locks differ from row-level locks?",
+    "answer": "Advisory locks are application-defined locks managed entirely in PostgreSQL memory without locking actual database rows or tables. They can be session-scoped (`pg_advisory_lock`) or transaction-scoped (`pg_advisory_xact_lock`), perfect for distributed deduplication.",
+    "tags": ["concurrency", "advisory-locks", "postgresql"]
+  },
+  {
     "id": "MIG-001",
     "category": "Migrations",
     "question": "What is the Expand/Contract (Parallel Run) pattern for zero-downtime migrations?",
@@ -84,11 +126,32 @@
     "tags": ["migrations", "postgresql", "locking"]
   },
   {
+    "id": "MIG-003",
+    "category": "Migrations",
+    "question": "Why should models never be imported directly inside `RunPython` migration scripts?",
+    "answer": "Direct imports (`from myapp.models import User`) import the CURRENT model class, which might have fields not yet existing in historical database state. Always use `apps.get_model('myapp', 'User')` to get the historical model state at that migration point.",
+    "tags": ["migrations", "runpython", "best-practices"]
+  },
+  {
     "id": "DRF-001",
     "category": "Django REST Framework",
     "question": "Why is CursorPagination required for tables with millions of rows over LimitOffsetPagination?",
     "answer": "Offset pagination (`OFFSET 500000 LIMIT 20`) forces PostgreSQL to scan and discard 500,000 rows on every request (O(N) cost). CursorPagination uses index seek (`WHERE id > :cursor LIMIT 20`), which is O(log N) and constant execution time.",
     "tags": ["drf", "pagination", "performance"]
+  },
+  {
+    "id": "DRF-002",
+    "category": "Django REST Framework",
+    "question": "Why does `SerializerMethodField` frequently cause N+1 query bugs in DRF?",
+    "answer": "`SerializerMethodField` executes a Python method for every single serialized object in a list. If that method queries a relation (`obj.profile.avatar`), Django hits the database once per item unless prefetched beforehand in `get_queryset()`.",
+    "tags": ["drf", "serializers", "n-plus-one"]
+  },
+  {
+    "id": "DRF-003",
+    "category": "Django REST Framework",
+    "question": "What is the execution order of validation methods in a DRF Serializer?",
+    "answer": "1. `to_internal_value(data)` (type conversions)\n2. Field-level validators (`validators=[...]`)\n3. `validate_<field_name>(self, value)`\n4. Object-level `validate(self, attrs)`\n5. Calling `.save()` invokes `create()` or `update()`.",
+    "tags": ["drf", "validation", "serializers"]
   },
   {
     "id": "SEC-001",
@@ -98,6 +161,20 @@
     "tags": ["security", "csrf", "owasp"]
   },
   {
+    "id": "SEC-002",
+    "category": "Security",
+    "question": "Why is Argon2 recommended over PBKDF2 for password hashing in production?",
+    "answer": "Argon2 (the winner of the Password Hashing Competition) is designed to be memory-hard, making GPU and ASIC brute-force cracking orders of magnitude more expensive than PBKDF2/SHA-256.",
+    "tags": ["security", "passwords", "argon2"]
+  },
+  {
+    "id": "SEC-003",
+    "category": "Security",
+    "question": "How do you prevent SSRF (Server-Side Request Forgery) when fetching user-supplied URLs?",
+    "answer": "1. Resolve DNS and validate the target IP is NOT in private/loopback/cloud metadata ranges (`127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.169.254`).\n2. Pin the resolved IP in the HTTP client to prevent DNS rebinding attacks.\n3. Disallow redirect following to unvalidated IPs.",
+    "tags": ["security", "ssrf", "network"]
+  },
+  {
     "id": "CACHE-001",
     "category": "Caching & Redis",
     "question": "What is a Cache Stampede (Thundering Herd) and how do you prevent it in Django?",
@@ -105,10 +182,52 @@
     "tags": ["caching", "redis", "concurrency"]
   },
   {
+    "id": "CACHE-002",
+    "category": "Caching & Redis",
+    "question": "What is the difference between Cache Penetration and Cache Avalanche?",
+    "answer": "- Cache Penetration: Requests for non-existent data bypass cache and continuously hit DB (fix: cache empty values or Bloom filters).\n- Cache Avalanche: Many cache keys expire at the exact same timestamp, causing massive DB spikes (fix: add random jitter to TTLs).",
+    "tags": ["caching", "redis", "architecture"]
+  },
+  {
+    "id": "CEL-001",
+    "category": "Background Jobs & Celery",
+    "question": "Why should `task_acks_late = True` and `task_reject_on_worker_lost = True` be configured?",
+    "answer": "By default (`acks_late=False`), Celery acknowledges tasks as soon as the worker receives them. If the worker crashes or is OOM-killed mid-execution, the task is lost forever. `acks_late=True` ensures tasks are only acknowledged after successful execution or requeued on crash.",
+    "tags": ["celery", "reliability", "workers"]
+  },
+  {
+    "id": "CEL-002",
+    "category": "Background Jobs & Celery",
+    "question": "How do you prevent memory leaks in Celery prefork workers?",
+    "answer": "Set `CELERY_WORKER_MAX_TASKS_PER_CHILD = 1000` (or `max_memory_per_child = 250000`), which causes Celery worker child processes to restart gracefully after processing N tasks, releasing any accumulated memory fragmentation.",
+    "tags": ["celery", "memory", "production"]
+  },
+  {
+    "id": "PG-001",
+    "category": "PostgreSQL Production",
+    "question": "When does PostgreSQL choose a Sequential Scan over an Index Scan?",
+    "answer": "When the table is very small (fits in few disk pages), when statistics show a large fraction of the table (>20-30%) will match the filter, when columns have missing indexes, or when `random_page_cost` is misconfigured too high compared to `seq_page_cost`.",
+    "tags": ["postgresql", "indexes", "query-planning"]
+  },
+  {
+    "id": "PG-002",
+    "category": "PostgreSQL Production",
+    "question": "What is the difference between PgBouncer Session Pooling and Transaction Pooling?",
+    "answer": "- Session Pooling: A client connection holds a dedicated PostgreSQL server connection for its entire lifespan.\n- Transaction Pooling: A server connection is returned to the pool as soon as `COMMIT`/`ROLLBACK` is issued. Requires disabling server-side cursors in Django (`DISABLE_SERVER_SIDE_CURSORS = True`).",
+    "tags": ["postgresql", "pgbouncer", "connection-pooling"]
+  },
+  {
     "id": "OPS-001",
     "category": "Operations & SRE",
     "question": "What causes a 502 Bad Gateway error behind Nginx and Gunicorn in Django?",
     "answer": "Nginx received an invalid or terminated response from the upstream Gunicorn worker. Common causes: Gunicorn worker timed out (`timeout=30s`), worker was killed by Linux OOM killer, or worker crashed due to unhandled segfault.",
     "tags": ["debugging", "runbooks", "gunicorn"]
+  },
+  {
+    "id": "OPS-002",
+    "category": "Operations & SRE",
+    "question": "How do you size Gunicorn workers for an I/O bound Django application?",
+    "answer": "Formula: `(2 x $NUM_CORES) + 1` worker processes using the `gthread` worker class with 4 to 8 threads per worker. For async ASGI workloads, use `uvicorn.workers.UvicornWorker`.",
+    "tags": ["deployment", "gunicorn", "capacity-planning"]
   }
 ]

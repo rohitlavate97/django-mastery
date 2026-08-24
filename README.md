@@ -104,6 +104,15 @@ python3 benchmarks/benchmark_suite.py
 
 ---
 
+## 🔬 In-Memory Interactive Sandbox (`sandbox/`)
+
+```bash
+# Run standalone zero-config SQL inspection and transaction savepoint tracer
+uv run --with django python sandbox/sandbox_app.py
+```
+
+---
+
 ## 📑 Production Cheat Sheets (`cheatsheets/`)
 
 - **[ORM & QuerySet Syntax](cheatsheets/orm-lookup-cheatsheet.md)**: Lookups, `Q()`, `F()`, `Subquery()`, `Window()`, Django 6.1 `FETCH_RAISE`.
