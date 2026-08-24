@@ -1,0 +1,346 @@
+site_name: Django Mastery Expert Guide
+site_description: Principal-Level Knowledge Base for Django 6.1, Python 3.12+, and PostgreSQL 16+
+site_author: Rohit Lavate
+site_url: https://rohitlavate97.github.io/django-mastery/
+
+repo_name: rohitlavate97/django-mastery
+repo_url: https://github.com/rohitlavate97/django-mastery
+edit_uri: edit/main/django-master-expert-guide/
+
+theme:
+  name: material
+  language: en
+  palette:
+    # Light mode
+    - scheme: default
+      primary: indigo
+      accent: deep purple
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    # Dark mode
+    - scheme: slate
+      primary: indigo
+      accent: deep purple
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - tables
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true
+
+docs_dir: django-master-expert-guide
+
+nav:
+  - Home: README.md
+  - 00. Learning System:
+    - Methodology: 00-learning-system/methodology.md
+    - Mental Models: 00-learning-system/mental-models.md
+    - Deliberate Practice: 00-learning-system/deliberate-practice.md
+  - 01. Python Foundations:
+    - Advanced Python: 01-python-foundations/advanced-python.md
+    - Concurrency Primitives: 01-python-foundations/concurrency-primitives.md
+    - Memory Model: 01-python-foundations/memory-model.md
+    - Packaging & Dependencies: 01-python-foundations/packaging-dependencies.md
+  - 02. Web / HTTP / Networking:
+    - HTTP Deep Dive: 02-web-http-networking/http-deep-dive.md
+    - TCP Sockets & TLS: 02-web-http-networking/tcp-sockets-tls.md
+    - DNS, CDN & Load Balancing: 02-web-http-networking/dns-cdn-load-balancing.md
+    - Web Security Fundamentals: 02-web-http-networking/web-security-fundamentals.md
+  - 03. Django Fundamentals:
+    - Project vs App: 03-django-fundamentals/project-vs-app.md
+    - Settings Deep Dive: 03-django-fundamentals/settings-deep-dive.md
+    - Management Commands: 03-django-fundamentals/management-commands.md
+    - Django Admin: 03-django-fundamentals/django-admin.md
+  - 04. Django Internals:
+    - Startup Sequence: 04-django-internals/startup-sequence.md
+    - Request-Response Lifecycle: 04-django-internals/request-response-lifecycle.md
+    - Class & Metaclass System: 04-django-internals/class-system.md
+    - Signal System: 04-django-internals/signal-system.md
+    - Lazy Objects: 04-django-internals/lazy-objects.md
+  - 05. URLs, Views & Middleware:
+    - URL Resolver Internals: 05-urls-views-middleware/url-resolver-internals.md
+    - FBV vs CBV: 05-urls-views-middleware/fbv-vs-cbv.md
+    - Middleware Deep Dive: 05-urls-views-middleware/middleware-deep-dive.md
+    - Error Handling: 05-urls-views-middleware/error-handling.md
+  - 06. Templates & Forms:
+    - Template Engine: 06-templates-forms/template-engine.md
+    - Forms Validation: 06-templates-forms/forms-validation.md
+    - When to Skip Templates: 06-templates-forms/when-to-skip-templates.md
+  - 07. Models & ORM:
+    - Model Design Patterns: 07-models-orm/model-design-patterns.md
+    - Relationships: 07-models-orm/relationships.md
+    - QuerySet Internals: 07-models-orm/queryset-internals.md
+    - Query Optimization: 07-models-orm/query-optimization.md
+    - Advanced Queries: 07-models-orm/advanced-queries.md
+    - Custom Managers & QuerySets: 07-models-orm/managers-querysets.md
+    - Raw SQL: 07-models-orm/raw-sql.md
+    - Fetch Modes (Django 6.1): 07-models-orm/fetch-modes.md
+  - 08. Query Performance:
+    - N+1 Queries: 08-query-performance/n-plus-one.md
+    - Slow Queries: 08-query-performance/slow-queries.md
+    - Memory Efficient Queries: 08-query-performance/memory-efficient-queries.md
+    - Connection Management: 08-query-performance/connection-management.md
+    - Query Profiling Tools: 08-query-performance/query-profiling-tools.md
+  - 09. Migrations:
+    - Migration Internals: 09-migrations-schema-evolution/migration-internals.md
+    - Safe Migrations: 09-migrations-schema-evolution/safe-migrations.md
+    - Data Migrations: 09-migrations-schema-evolution/data-migrations.md
+    - Migration Conflicts: 09-migrations-schema-evolution/migration-conflicts.md
+    - Large Table Migrations: 09-migrations-schema-evolution/large-table-migrations.md
+  - 10. Transactions & Concurrency:
+    - ACID & Isolation Levels: 10-transactions-concurrency/acid-isolation-levels.md
+    - transaction.atomic(): 10-transactions-concurrency/transaction-atomic.md
+    - Race Conditions: 10-transactions-concurrency/race-conditions.md
+    - Locking Strategies: 10-transactions-concurrency/locking-strategies.md
+    - Deadlocks: 10-transactions-concurrency/deadlocks.md
+    - Idempotency Patterns: 10-transactions-concurrency/idempotency-patterns.md
+  - 11. Django REST Framework:
+    - Serializer Internals: 11-django-rest-framework/serializer-internals.md
+    - Views & ViewSets: 11-django-rest-framework/views-viewsets.md
+    - Authentication Backends: 11-django-rest-framework/authentication-backends.md
+    - Permissions Deep Dive: 11-django-rest-framework/permissions-deep-dive.md
+    - Pagination & Filtering: 11-django-rest-framework/pagination-filtering.md
+    - Throttling & Rate Limiting: 11-django-rest-framework/throttling-rate-limiting.md
+    - API Versioning: 11-django-rest-framework/api-versioning.md
+    - API Design Principles: 11-django-rest-framework/api-design-principles.md
+  - 12. Auth & Authorization:
+    - Custom User Model: 12-authentication-authorization/custom-user-model.md
+    - Password Security: 12-authentication-authorization/password-security.md
+    - Session Management: 12-authentication-authorization/session-management.md
+    - JWT Deep Dive: 12-authentication-authorization/jwt-deep-dive.md
+    - OAuth & OIDC: 12-authentication-authorization/oauth-oidc.md
+    - RBAC vs ABAC: 12-authentication-authorization/rbac-abac.md
+    - Object-Level Permissions: 12-authentication-authorization/object-level-permissions.md
+  - 13. Security:
+    - Threat Modeling: 13-security/threat-modeling.md
+    - OWASP Top 10: 13-security/owasp-top-10-django.md
+    - CSRF Deep Dive: 13-security/csrf-deep-dive.md
+    - CORS Configuration: 13-security/cors-configuration.md
+    - XSS Prevention: 13-security/xss-prevention.md
+    - SQL Injection: 13-security/sql-injection.md
+    - SSRF Prevention: 13-security/ssrf-prevention.md
+    - Secret Management: 13-security/secret-management.md
+    - Secure Headers: 13-security/secure-headers.md
+    - File Upload Security: 13-security/file-upload-security.md
+    - Security Checklist: 13-security/security-checklist.md
+  - 14. Settings & Environments:
+    - Settings Architecture: 14-settings-environments/settings-architecture.md
+    - Environment Variables: 14-settings-environments/environment-variables.md
+    - Secret Rotation: 14-settings-environments/secret-rotation.md
+    - Feature Flags: 14-settings-environments/feature-flags.md
+    - Twelve-Factor App: 14-settings-environments/twelve-factor.md
+    - Deployment Checklist: 14-settings-environments/deployment-checklist.md
+  - 15. Caching & Redis:
+    - Caching Strategies: 15-caching-redis/caching-strategies.md
+    - Django Cache Framework: 15-caching-redis/django-cache-framework.md
+    - Redis Deep Dive: 15-caching-redis/redis-deep-dive.md
+    - Cache Invalidation: 15-caching-redis/cache-invalidation.md
+    - Cache Failure Modes: 15-caching-redis/cache-failure-modes.md
+    - Distributed Caching: 15-caching-redis/distributed-caching.md
+  - 16. Background Jobs:
+    - Celery Architecture: 16-background-jobs/celery-architecture.md
+    - Task Design Patterns: 16-background-jobs/task-design-patterns.md
+    - Failure Handling: 16-background-jobs/failure-handling.md
+    - Django Native Tasks: 16-background-jobs/django-native-tasks.md
+    - Monitoring Celery: 16-background-jobs/monitoring-celery.md
+    - Production Celery: 16-background-jobs/production-celery.md
+  - 17. Async & ASGI:
+    - WSGI vs ASGI: 17-async-asgi/wsgi-vs-asgi.md
+    - Async Views: 17-async-asgi/async-views.md
+    - Sync/Async Boundary: 17-async-asgi/sync-async-boundary.md
+    - Event Loop: 17-async-asgi/event-loop.md
+    - When Async Hurts: 17-async-asgi/when-async-hurts.md
+  - 18. WebSockets & Realtime:
+    - Channels Architecture: 18-websockets-realtime/channels-architecture.md
+    - WebSocket Patterns: 18-websockets-realtime/websocket-patterns.md
+    - Scaling WebSockets: 18-websockets-realtime/scaling-websockets.md
+    - Production WebSockets: 18-websockets-realtime/production-websockets.md
+  - 19. Testing:
+    - Testing Philosophy: 19-testing/testing-philosophy.md
+    - Pytest-Django: 19-testing/pytest-django.md
+    - Unit Testing: 19-testing/unit-testing.md
+    - Integration Testing: 19-testing/integration-testing.md
+    - Testing Async: 19-testing/testing-async.md
+    - Testing Concurrency: 19-testing/testing-concurrency.md
+    - Test Performance: 19-testing/test-performance.md
+    - Mocking Patterns: 19-testing/mocking-patterns.md
+    - Factory Patterns: 19-testing/factory-patterns.md
+    - Flaky Tests: 19-testing/flaky-tests.md
+  - 20. Debugging & Runbooks:
+    - Debugging Methodology: 20-debugging/debugging-methodology.md
+    - Local Debugging: 20-debugging/local-debugging.md
+    - Production Debugging: 20-debugging/production-debugging.md
+    - ORM Debugging: 20-debugging/orm-debugging.md
+    - Runbooks:
+      - 500 Errors: 20-debugging/runbooks/500-errors.md
+      - 502 Bad Gateway: 20-debugging/runbooks/502-errors.md
+      - 503 Service Unavailable: 20-debugging/runbooks/503-errors.md
+      - 504 Gateway Timeout: 20-debugging/runbooks/504-errors.md
+      - Slow API: 20-debugging/runbooks/slow-api.md
+      - High CPU: 20-debugging/runbooks/high-cpu.md
+      - High Memory: 20-debugging/runbooks/high-memory.md
+      - OOM Kill: 20-debugging/runbooks/oom-kill.md
+      - DB Connection Exhaustion: 20-debugging/runbooks/db-connection-exhaustion.md
+      - Slow Database: 20-debugging/runbooks/slow-database.md
+      - Deadlock: 20-debugging/runbooks/deadlock.md
+      - Redis Unavailable: 20-debugging/runbooks/redis-unavailable.md
+      - Celery Backlog: 20-debugging/runbooks/celery-backlog.md
+      - Worker Crash: 20-debugging/runbooks/worker-crash.md
+      - Static Files Missing: 20-debugging/runbooks/static-files-missing.md
+      - Migration Failure: 20-debugging/runbooks/migration-failure.md
+      - Deployment Failure: 20-debugging/runbooks/deployment-failure.md
+      - CORS Failure: 20-debugging/runbooks/cors-failure.md
+      - CSRF Failure: 20-debugging/runbooks/csrf-failure.md
+      - SSL Problems: 20-debugging/runbooks/ssl-problems.md
+  - 21. Observability:
+    - Structured Logging: 21-logging-observability/structured-logging.md
+    - Metrics: 21-logging-observability/metrics.md
+    - Distributed Tracing: 21-logging-observability/distributed-tracing.md
+    - Error Tracking: 21-logging-observability/error-tracking.md
+    - Alerting Strategy: 21-logging-observability/alerting-strategy.md
+    - Dashboards: 21-logging-observability/dashboards.md
+  - 22. Performance:
+    - Performance Methodology: 22-performance-load-testing/performance-methodology.md
+    - Django Profiling: 22-performance-load-testing/django-profiling.md
+    - Database Profiling: 22-performance-load-testing/database-profiling.md
+    - Load Testing: 22-performance-load-testing/load-testing.md
+    - Capacity Planning: 22-performance-load-testing/capacity-planning.md
+    - Optimization Catalog: 22-performance-load-testing/optimization-catalog.md
+  - 23. PostgreSQL Production:
+    - Indexes Deep Dive: 23-postgresql-production/indexes-deep-dive.md
+    - Query Plans: 23-postgresql-production/query-plans.md
+    - Locking Internals: 23-postgresql-production/locking-internals.md
+    - Connection Pooling: 23-postgresql-production/connection-pooling.md
+    - Vacuum & Bloat: 23-postgresql-production/vacuum-maintenance.md
+    - Backup & Restore: 23-postgresql-production/backup-restore.md
+    - Replication: 23-postgresql-production/replication.md
+    - PostgreSQL Tuning: 23-postgresql-production/postgresql-tuning.md
+  - 24. External Integrations:
+    - HTTP Client Patterns: 24-external-integrations/http-client-patterns.md
+    - Circuit Breaker: 24-external-integrations/circuit-breaker.md
+    - Webhook Handling: 24-external-integrations/webhook-handling.md
+    - Payment Integration: 24-external-integrations/payment-integration.md
+    - Email & SMS: 24-external-integrations/email-sms.md
+    - File Storage: 24-external-integrations/file-storage.md
+  - 25. Docker & Development:
+    - Dockerfile Best Practices: 25-docker-local-development/dockerfile-best-practices.md
+    - Docker Compose: 25-docker-local-development/docker-compose.md
+    - Dev/Prod Parity: 25-docker-local-development/dev-prod-parity.md
+    - Docker Debugging: 25-docker-local-development/docker-debugging.md
+  - 26. CI/CD:
+    - Pipeline Design: 26-ci-cd/pipeline-design.md
+    - Testing in CI: 26-ci-cd/testing-in-ci.md
+    - Migration Validation: 26-ci-cd/migration-validation.md
+    - Security Scanning: 26-ci-cd/security-scanning.md
+    - Deployment Strategies: 26-ci-cd/deployment-strategies.md
+    - Rollback Procedures: 26-ci-cd/rollback-procedures.md
+  - 27. Production Deployment:
+    - Deployment Architecture: 27-production-deployment/deployment-architecture.md
+    - Gunicorn & Uvicorn: 27-production-deployment/gunicorn-uvicorn.md
+    - Nginx Configuration: 27-production-deployment/nginx-configuration.md
+    - Health Checks: 27-production-deployment/health-checks.md
+    - Zero-Downtime Deployment: 27-production-deployment/zero-downtime-deployment.md
+    - Static & Media Files: 27-production-deployment/static-media-files.md
+  - 28. Cloud Architecture:
+    - AWS Architecture: 28-cloud-architecture/aws-django.md
+    - GCP Architecture: 28-cloud-architecture/gcp-django.md
+    - Managed Services: 28-cloud-architecture/managed-services.md
+    - Cost Optimization: 28-cloud-architecture/cost-optimization.md
+  - 29. Kubernetes & Scaling:
+    - Kubernetes Django: 29-kubernetes-scaling/k8s-django.md
+    - Horizontal Scaling: 29-kubernetes-scaling/horizontal-scaling.md
+    - Database Scaling: 29-kubernetes-scaling/database-scaling.md
+    - Auto-Scaling: 29-kubernetes-scaling/auto-scaling.md
+  - 30. Production Incidents:
+    - Incident Response: 30-production-incidents/incident-response.md
+    - Incident Simulations: 30-production-incidents/incident-simulations.md
+    - Post-Mortem Template: 30-production-incidents/post-mortem-template.md
+  - 31. Issue Encyclopedia:
+    - Application Issues: 31-issue-encyclopedia/application-issues.md
+    - ORM Issues: 31-issue-encyclopedia/orm-issues.md
+    - Database Issues: 31-issue-encyclopedia/database-issues.md
+    - Cache Issues: 31-issue-encyclopedia/cache-issues.md
+    - Background Job Issues: 31-issue-encyclopedia/background-job-issues.md
+    - API Issues: 31-issue-encyclopedia/api-issues.md
+    - Deployment Issues: 31-issue-encyclopedia/deployment-issues.md
+    - Security Issues: 31-issue-encyclopedia/security-issues.md
+  - 32. Architecture Patterns:
+    - Service Layer: 32-architecture-patterns/service-layer.md
+    - Repository Pattern: 32-architecture-patterns/repository-pattern.md
+    - Domain-Driven Design: 32-architecture-patterns/domain-driven-design.md
+    - Event-Driven Architecture: 32-architecture-patterns/event-driven.md
+    - Multi-Tenancy: 32-architecture-patterns/multi-tenancy.md
+    - Monolith to Services: 32-architecture-patterns/monolith-to-services.md
+  - 33. System Design:
+    - Design Methodology: 33-system-design/design-methodology.md
+    - URL Shortener: 33-system-design/url-shortener.md
+    - Notification System: 33-system-design/notification-system.md
+    - E-Commerce Backend: 33-system-design/e-commerce-backend.md
+    - Social Feed: 33-system-design/social-feed.md
+    - Rate Limiter: 33-system-design/rate-limiter.md
+  - 34. Code Review:
+    - Review Checklist: 34-code-review/review-checklist.md
+    - Common PR Issues: 34-code-review/common-pr-issues.md
+    - Review Scenarios: 34-code-review/review-scenarios.md
+  - 35. Real-World Projects:
+    - Project 1 Foundation: 35-real-world-projects/project-1-foundation.md
+    - Project 2 Scalable: 35-real-world-projects/project-2-scalable.md
+    - Project 3 Enterprise: 35-real-world-projects/project-3-enterprise.md
+    - Production Readiness Gate: 35-real-world-projects/project-checklist.md
+  - 36. Senior & Principal Knowledge:
+    - Engineering Judgment: 36-senior-principal-knowledge/engineering-judgment.md
+    - Technical Writing: 36-senior-principal-knowledge/technical-writing.md
+    - Mentoring Teams: 36-senior-principal-knowledge/mentoring.md
+    - Career Growth & Staff Track: 36-senior-principal-knowledge/career-growth.md
+  - 37. Interview Scenarios:
+    - Django Deep Dive: 37-interview-scenarios/django-deep-dive.md
+    - System Design Scenarios: 37-interview-scenarios/system-design.md
+    - Live Debugging Scenarios: 37-interview-scenarios/debugging-scenarios.md
+    - Code Review Exercises: 37-interview-scenarios/code-review-exercises.md
+    - Behavioral Questions: 37-interview-scenarios/behavioral.md
+  - Checklists & Reference:
+    - Checklists:
+      - New Project: checklists/new-project.md
+      - Pre-Deployment: checklists/pre-deployment.md
+      - Security Audit: checklists/security-audit.md
+      - Performance Review: checklists/performance-review.md
+      - API Design: checklists/api-design.md
+      - Migration Safety: checklists/migration-safety.md
+    - Troubleshooting:
+      - Quick Reference: troubleshooting/quick-reference.md
+      - Common Errors: troubleshooting/common-django-errors.md
+    - Glossary: glossary/glossary.md
