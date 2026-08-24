@@ -1,0 +1,15 @@
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: celery-scaledobject
+spec:
+  scaleTargetRef:
+    name: celery-worker
+  minReplicaCount: 1
+  maxReplicaCount: 10
+  triggers:
+  - type: redis
+    metadata:
+      address: redis-host:6379
+      listName: celery
+      listLength: "5"

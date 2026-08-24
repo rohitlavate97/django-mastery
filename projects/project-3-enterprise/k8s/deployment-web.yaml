@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      containers:
+      - name: web
+        image: enterprise-saas-web:latest
+        command: ["daphne", "-b", "0.0.0.0", "-p", "8000", "config.asgi:application"]
+        ports:
+        - containerPort: 8000
+        envFrom:
+        - configMapRef:
+            name: app-secrets
+        livenessProbe:
+          httpGet:
+            path: /admin/login/
+            port: 8000
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /admin/login/
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 10

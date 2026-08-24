@@ -1,0 +1,12 @@
+[tool.poetry]
+name = "enterprise-saas"
+version = "0.1.0"
+description = "Enterprise Multi-Tenant SaaS"
+authors = ["Admin <admin@example.com>"]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings"
+python_files = ["test_*.py", "*_test.py"]
+addopts = "--strict-markers --no-migrations"
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
