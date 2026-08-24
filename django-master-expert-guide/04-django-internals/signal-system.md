@@ -1,95 +1,132 @@
-# Django Signal System
+# Django Signal System Internals [DJANGO 6.1+]
 
 ## 1. Mental Model
 ```text
-Sender (Model.save()) --> Signal (post_save) --> Dispatcher --> Receiver Function(s)
+[Sender (e.g. Model.save())]
+       |
+       v
+signal.send(sender, **kwargs)
+       |
+       v
+[Signal Dispatcher] -> Checks `receivers` list
+       |
+       v
+   (Iterates registered functions)
+   -> receiver_1(sender, **kwargs)
+   -> receiver_2(sender, **kwargs)
 ```
 
 ## 2. Why It Exists
-Signals allow decoupled applications get notified when actions occur elsewhere in the framework (e.g., a user is created, a model is saved).
+Allows decoupled applications get notified when actions occur elsewhere in the framework (Publish-Subscribe pattern). Example: Clearing cache when a model is saved without modifying the model's `save()` method.
 
 ## 3. Internal Working
-Django signals use the Observer pattern. `Signal.send()` iterates over registered receivers. Registration uses `dispatch_uid` to prevent duplicates.
+Trace of `django/dispatch/dispatcher.py`:
+```python
+class Signal:
+    def __init__(self):
+        self.receivers = []
+        self.lock = threading.Lock()
+
+    def connect(self, receiver, sender=None, weak=True, dispatch_uid=None):
+        # Uses weak references by default to prevent memory leaks
+        lookup_key = (dispatch_uid, _make_id(sender))
+        self.receivers.append((lookup_key, receiver))
+
+    def send(self, sender, **named):
+        responses = []
+        if not self.receivers:
+            return responses
+            
+        for receiver in self._live_receivers(sender):
+            response = receiver(signal=self, sender=sender, **named)
+            responses.append((receiver, response))
+        return responses
+```
 
 ## 4. Basic Implementation
 ```python
 from django.db.models.signals import post_save
 from django.dispatch import receiver
-from django.contrib.auth.models import User
+from .models import User
 
 @receiver(post_save, sender=User)
-def create_profile(sender, instance, created, **kwargs):
+def user_saved(sender, instance, created, **kwargs):
     if created:
-        Profile.objects.create(user=instance)
+        print(f"Welcome {instance.username}!")
 ```
 
 ## 5. Production-Ready Implementation
 ```python
+import logging
 from django.db.models.signals import post_save
 from django.dispatch import receiver
-from django.db import transaction
-import logging
+from .models import Order
+from .tasks import send_order_confirmation_email
 
 logger = logging.getLogger(__name__)
 
-@receiver(post_save, sender=User, dispatch_uid="create_user_profile_unique")
-def create_profile(sender, instance, created, **kwargs):
-    if created:
-        # Use on_commit if triggering async Celery tasks
-        transaction.on_commit(lambda: logger.info(f"User {instance.id} created & committed."))
-        Profile.objects.get_or_create(user=instance)
+# ALWAYS use dispatch_uid to prevent duplicate registration
+@receiver(post_save, sender=Order, dispatch_uid="order_post_save_email")
+def trigger_order_email(sender, instance, created, **kwargs):
+    try:
+        if created and instance.status == 'paid':
+            # Do NOT block the request/db transaction. Send to Celery.
+            send_order_confirmation_email.delay(instance.id)
+    except Exception as e:
+        logger.error(f"Failed to trigger email for order {instance.id}: {e}")
 ```
 
 ## 6. Anti-Patterns
-🔴 **TICKING TIME BOMB**: Business logic in signals.
+🔴 **TICKING TIME BOMB**: Mutating the instance inside `post_save` and calling `save()` again.
 ```python
-# INCORRECT: Implicit side effects making debugging a nightmare.
-@receiver(post_save, sender=Order)
-def charge_credit_card(sender, instance, **kwargs):
-    # Firing an external API call inside a DB transaction!
-    pass
+@receiver(post_save, sender=User)
+def infinite_loop(sender, instance, **kwargs):
+    instance.is_active = True
+    instance.save() # TRIGGERS POST_SAVE AGAIN! MAXIMUM RECURSION DEPTH!
 ```
 
 ## 7. Environment-Specific Behavior
-Signals fire during testing too! Use `factory_boy` with `mute_signals()` to prevent unwanted side effects.
+Signals run synchronously in the same thread and database transaction context as the caller. If a signal crashes, it crashes the entire request!
 
 ## 8. Local Development Issues
-🔴 SYMPTOM: Signal fires multiple times.
-🔍 CAUSE: App registry imported the signals module twice, and `dispatch_uid` was not provided.
-🔧 FIX: Always use a unique string for `dispatch_uid` in `@receiver`.
+🔴 SYMPTOM: Signal fires twice!
+🔍 CAUSE: The module containing the signal was imported twice, registering the function twice.
+🔧 FIX: Always use a unique `dispatch_uid` in the `@receiver` decorator.
 
 ## 9. Production Issues
-INCIDENT: Celery task raised `ObjectDoesNotExist`.
+INCIDENT: API Latency Spikes on `POST /orders`.
 SEVERITY: High
-CAUSE: A `post_save` signal enqueued a Celery task with the object ID. The task started before the database transaction committed.
-FIX: Wrap the Celery task dispatch in `transaction.on_commit()`.
+CAUSE: A `post_save` signal was added to `Order` that made a synchronous HTTP call to an external CRM. When the CRM got slow, saving orders in Django hung.
+FIX: Move the HTTP call to a background task (Celery). Signals should ONLY enqueue tasks or update caches.
 
 ## 10. Failure Simulation
 ```python
-# Simulate signal failing silently
-from django.dispatch import Signal
-my_sig = Signal()
+import pytest
+from django.core.signals import request_finished
 
-def failing_receiver(sender, **kwargs):
-    raise ValueError("Crash")
-
-my_sig.connect(failing_receiver)
-# send_robust catches the exception and returns it as a tuple
-responses = my_sig.send_robust(sender=None)
+def test_signal_execution():
+    flag = False
+    def my_handler(sender, **kwargs):
+        nonlocal flag
+        flag = True
+        
+    request_finished.connect(my_handler)
+    request_finished.send(sender=None)
+    assert flag
 ```
 
 ## 11. Decision Matrix
-| Task | Use Signal? | Alternative |
-|------|-------------|-------------|
-| Audit logging | ✅ Yes | - |
-| Cache invalidation | ✅ Yes | - |
-| Core business logic | ❌ No | Explicit function call |
+| Requirement | Use Signals? | Alternative |
+|-------------|--------------|-------------|
+| Same app, tight coupling | ❌ No | Override `save()` method |
+| Cross-app decoupling | ✅ Yes | N/A |
+| Async processing needed | ❌ No | Celery / Background tasks |
 
 ## 12. Senior-Level Questions
-**Q: Do signals execute asynchronously?**
-A: NO. Django signals are 100% synchronous and block the main thread. If a signal does a slow API call, the HTTP response is delayed.
+**Q: What happens if a DB transaction rolls back, but your signal sent an email?**
+A: The user gets an email, but the DB row doesn't exist! Use `transaction.on_commit(lambda: send_email.delay(id))` inside the signal to ensure it only runs if the DB commits successfully.
 
 ## 13. Production Checklist
-- [ ] All signals have `dispatch_uid`.
-- [ ] No external API calls inside signals (use `on_commit` + Celery).
-- [ ] Signals are imported in `AppConfig.ready()`.
+- [ ] `dispatch_uid` used on all receivers.
+- [ ] Heavy I/O is offloaded to Celery.
+- [ ] `transaction.on_commit` used for irreversible actions (emails, external APIs).

@@ -1,20 +1,44 @@
-# Django Class and Descriptor System
+# Django Class System & Metaclasses [DJANGO 6.1+]
 
 ## 1. Mental Model
 ```text
-Metaclass (ModelBase) -> Creates -> Model Class -> Instantiated as -> Model Instance
-       |                                |                               |
- Collects Fields                Holds _meta Options            Uses Descriptors to access DB
+[Metaclass: ModelBase] 
+        | (intercepts class creation)
+        v
+[Class: MyModel(models.Model)] 
+        | (extracts Field attributes -> adds them to _meta)
+        | (replaces Field attributes with DeferredAttribute descriptors)
+        v
+[Instance: my_model_instance]
 ```
 
 ## 2. Why It Exists
-Django models abstract the database. Metaclasses allow Django to analyze field definitions at class creation time, build the `_meta` API, and replace class attributes with descriptors (like `DeferredAttribute`) so that instance access triggers data loading.
+Django's declarative API (like Models and Forms) requires magic to turn class-level attributes (Fields) into complex instance-level behavior (DB queries, validation) transparently. Metaclasses power this.
 
 ## 3. Internal Working
-1. **ModelBase.__new__**: The metaclass intercepts class creation.
-2. **contribute_to_class**: Fields add themselves to the class.
-3. **_meta Setup**: The `Options` class (`_meta`) stores fields, indexes, and constraints.
-4. **AppRegistry**: Model is registered.
+Trace of `django/db/models/base.py`:
+```python
+class ModelBase(type):
+    def __new__(cls, name, bases, attrs, **kwargs):
+        super_new = super().__new__
+        new_class = super_new(cls, name, bases, {'__module__': attrs.pop('__module__')})
+        
+        # Setup _meta (Options class)
+        meta = attrs.pop('Meta', None)
+        new_class.add_to_class('_meta', Options(meta, app_label))
+        
+        # Add fields
+        for obj_name, obj in attrs.items():
+            new_class.add_to_class(obj_name, obj)
+            
+        return new_class
+
+    def add_to_class(cls, name, value):
+        if hasattr(value, 'contribute_to_class'):
+            value.contribute_to_class(cls, name)
+        else:
+            setattr(cls, name, value)
+```
 
 ## 4. Basic Implementation
 ```python
@@ -22,7 +46,6 @@ from django.db import models
 
 class Person(models.Model):
     name = models.CharField(max_length=100)
-    # Metaclass converts 'name' into a descriptor on the class!
 ```
 
 ## 5. Production-Ready Implementation
@@ -30,64 +53,69 @@ class Person(models.Model):
 from django.db import models
 
 class TimeStampedModel(models.Model):
-    created_at = models.DateTimeField(auto_now_add=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        abstract = True
+        abstract = True  # Tell ModelBase NOT to create a DB table for this
 
 class Product(TimeStampedModel):
-    sku = models.CharField(max_length=50, unique=True)
-    
-    class Meta:
-        db_table = 'inventory_product'
-        indexes = [
-            models.Index(fields=['sku']),
-        ]
+    name = models.CharField(max_length=255)
+    price = models.DecimalField(max_digits=10, decimal_places=2)
 ```
 
 ## 6. Anti-Patterns
-🔴 **TICKING TIME BOMB**: Overriding `__init__` incorrectly.
+🔴 **TICKING TIME BOMB**: Mutating class attributes in an instance method.
 ```python
-# INCORRECT
 class MyModel(models.Model):
-    def __init__(self, *args, **kwargs):
-        # Missing super()!
-        self.custom_attr = True
+    tags = [] # Shared across ALL instances!
+
+    def add_tag(self, tag):
+        self.tags.append(tag) # Memory leak / Data corruption across requests
 ```
 
 ## 7. Environment-Specific Behavior
-Model metaclasses run at **import time** (during startup Phase 2). Any failure here crashes the process.
+Metaclass evaluation happens entirely at module import time (startup). There is zero runtime overhead per-request, making it extremely fast in all environments.
 
 ## 8. Local Development Issues
-🔴 SYMPTOM: `RuntimeError: Model class doesn't declare an explicit app_label`
-🔍 CAUSE: A model is defined outside an app (e.g., in a standalone script) and lacks `app_label` in `Meta`.
-🔧 FIX: Add `app_label = 'my_app'` in the `Meta` class.
+🔴 SYMPTOM: `TypeError: Model class module.Model doesn't declare an explicit app_label`
+🔍 CAUSE: A model is defined outside an app directory and Django's registry cannot infer its `app_label`.
+🔧 FIX: Add `app_label = 'my_app'` inside the model's `Meta` class.
 
 ## 9. Production Issues
-INCIDENT: N+1 queries from property access.
-SEVERITY: Medium
-CAUSE: A standard `@property` accessed a reverse foreign key relation repeatedly.
-FIX: Use `cached_property` or prefetch the relation.
+INCIDENT: Server hang during model definition.
+SEVERITY: Low
+CAUSE: A developer put a heavy DB query inside a model's class-level attribute (e.g. `default=get_expensive_data()`). It executed during startup, blocking Gunicorn.
+FIX: Always pass callables to defaults: `default=get_expensive_data`.
 
 ## 10. Failure Simulation
 ```python
-# Trying to access _meta fields incorrectly
-Product._meta.get_field('invalid_field') # Raises FieldDoesNotExist
+import pytest
+from django.db.models.base import ModelBase
+
+def test_abstract_model_cannot_be_instantiated():
+    class AbstractOnly(models.Model):
+        class Meta:
+            abstract = True
+            
+    with pytest.raises(TypeError):
+        # Django actually allows instantiation of abstract models, 
+        # but saving them raises an error!
+        obj = AbstractOnly()
+        obj.save() # Raises NotImplementedError
 ```
 
 ## 11. Decision Matrix
-| Requirement | Solution |
-|-------------|----------|
-| Share fields across models | Abstract Base Class |
-| Change behavior of existing model | Proxy Model |
-| Multi-table inheritance | Subclassing concrete model |
+| Need | Solution |
+|------|----------|
+| Shared fields (created_at) | Abstract Base Class (`abstract = True`) |
+| Shared logic | Mixins (Standard Python class) |
+| Different Python behavior, same DB | Proxy Model (`proxy = True`) |
 
 ## 12. Senior-Level Questions
-**Q: How do ForwardManyToOneDescriptor descriptors work?**
-A: When you access `book.author`, the descriptor checks its internal cache. If the object isn't there, it executes a SQL query to fetch the author, caches it, and returns it.
+**Q: How does `name = CharField()` become a string on the instance?**
+A: `CharField.contribute_to_class` replaces the class attribute with a `DeferredAttribute` descriptor. When you access `instance.name`, the descriptor's `__get__` fetches the value from `instance.__dict__`.
 
 ## 13. Production Checklist
-- [ ] Abstract models explicitly declare `abstract = True`.
-- [ ] Proxy models declare `proxy = True`.
-- [ ] Avoid heavy logic in model `__init__`.
+- [ ] No mutable defaults on class attributes.
+- [ ] `abstract = True` used properly to avoid multi-table inheritance joins.
