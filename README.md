@@ -79,6 +79,11 @@ Interactive, test-driven coding challenges with automated Pytest grading:
 - **[03 Concurrency & Race Conditions](exercises/03_concurrency_race/)**: Fix multi-threaded balance deduction race conditions using `select_for_update()`.
 - **[04 Redis Rate Limiter](exercises/04_redis_rate_limiter/)**: Write atomic sliding window rate limiter Lua scripts in Redis.
 - **[05 Circuit Breaker](exercises/05_circuit_breaker/)**: Build a stateful Circuit Breaker (`CLOSED`, `OPEN`, `HALF_OPEN`) with fallback routing.
+- **[06 Transactional Outbox](exercises/06_outbox_pattern/)**: Reliable event publishing without two-phase commit.
+- **[07 Tenant Data Isolation](exercises/07_tenant_isolation/)**: Single-database multi-tenant scoping via ContextVars and custom Managers.
+- **[08 Safe Migration Operations](exercises/08_custom_migration_operation/)**: Zero-downtime PostgreSQL concurrent index migrations with lock timeouts.
+- **[09 Signal Transaction Timing](exercises/09_signals_transaction_timing/)**: Celery task dispatching safely using `transaction.on_commit()`.
+- **[10 HMAC Request Signing](exercises/10_hmac_auth_backend/)**: API-to-API SHA-256 HMAC authentication with anti-replay verification.
 
 ```bash
 # Run all exercises
@@ -90,6 +95,24 @@ pytest exercises/01_descriptors/
 
 ---
 
+## 📊 Runnable Benchmarks (`benchmarks/`)
+
+```bash
+# Run synthetic ORM, pagination, and concurrency performance benchmarks
+python3 benchmarks/benchmark_suite.py
+```
+
+---
+
+## 📑 Production Cheat Sheets (`cheatsheets/`)
+
+- **[ORM & QuerySet Syntax](cheatsheets/orm-lookup-cheatsheet.md)**: Lookups, `Q()`, `F()`, `Subquery()`, `Window()`, Django 6.1 `FETCH_RAISE`.
+- **[PostgreSQL 16+ Tuning](cheatsheets/postgresql-tuning-cheatsheet.md)**: Hardware formulas, autovacuum config, lock diagnostics.
+- **[Gunicorn & Nginx](cheatsheets/gunicorn-nginx-cheatsheet.md)**: Worker sizing, keepalive buffers, reverse proxy headers.
+- **[Celery Production](cheatsheets/celery-production-cheatsheet.md)**: Worker flags, retry policies, transaction safety.
+
+---
+
 ## 💻 Interactive CLI Companion (`cli/`)
 
 ```bash
@@ -98,6 +121,12 @@ python3 cli/main.py search "select_for_update"
 
 # View any production readiness checklist instantly
 python3 cli/main.py checklist pre-deployment
+
+# Review spaced repetition active-recall flashcards
+python3 cli/main.py flashcards
+
+# Simulate a live 2 AM production outage triage
+python3 cli/main.py incident
 
 # Run automated tests for an exercise
 python3 cli/main.py exercise 1
